@@ -12,7 +12,7 @@ enum class Cpu6502Model
 	Original,
 
 	// Simulate Newer 6502 with bugfixes
-	Cpu65SC02
+	Cpu65C02
 };
 class Cpu6502
 {
@@ -26,6 +26,7 @@ public:
 private:
 	uint8_t FetchProgramInstruction(Memory64k& mem)
 	{
+		assert(PC < 0xFFFF);
 		return mem[PC++];
 	}
 

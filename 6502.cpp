@@ -7,6 +7,12 @@
 
 #include "6502.h"
 
+#define DEBUG_PRINT 1
+
+#if DEBUG_PRINT
+#include <iostream>
+#endif
+
 namespace
 {
 	constexpr uint8_t kBit7Mask = 0b10000000;
@@ -21,9 +27,31 @@ namespace
 
 Cpu6502::Cpu6502(Clock& clock, Cpu6502Model model)
 	: CpuClock(clock)
+	, A(0)
+	, X(0)
+	, Y(0)
+	, SP(0)
+	, PC(0)
+	, F(0)
+	, NextInstruction(0)
+	, InstructionCycle(0)
+	, InstructionDecoding()
 	, Model(model)
 {
-
+#if DEBUG_PRINT
+	const char* collunmName[] = { "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C", "D", "E", "F" };
+	printf("  0 1 2 3 4 5 6 7 8 9 A B C D E F\n");
+	for (int i = 0; i < 0x10; ++i)
+	{
+		printf("%s", collunmName[i]);
+		for (int j = 0; j < 0x10; ++j)
+		{
+			int index = (i << 4) + j;
+			printf(" %s", InstructionInfo[index].size > 0 ? "X" : ".");
+		}
+		printf("\n");
+	}
+#endif
 }
 
 // Information for instruction decoding
@@ -405,7 +433,20 @@ const Cpu6502::InstructionInformation Cpu6502::InstructionInfo[256] =
 		},
 		[](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; }
 	},
-	/* 46 */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
+	/* 46 LSR ZeroPage */
+	{
+		2,
+		5,
+		[](Cpu6502* cpu, Memory64k& mem)
+		{
+			uint8_t& data = mem[cpu->InstructionDecoding[1]];
+			cpu->N = 0;
+			cpu->C = data & 1;
+			data = (data >> 1) & 0x7F;
+			cpu->Z = data == 0;
+		},
+		[](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; }
+	},
 	/* 47 */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
 	/* 48 */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
 	/* 49 EOR Immediate */
@@ -420,7 +461,19 @@ const Cpu6502::InstructionInformation Cpu6502::InstructionInfo[256] =
 		}, 
 		[](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } 
 	},
-	/* 4A */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
+	/* 4A LSR A */
+	{
+		1,
+		2,
+		[](Cpu6502* cpu, Memory64k& mem)
+		{
+			cpu->N = 0;
+			cpu->C = cpu->A & 1;
+			cpu->A = (cpu->A >> 1) & 0x7F;
+			cpu->Z = cpu->A == 0;
+		},
+		[](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; }
+	},
 	/* 4B */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
 	/* 4C JMP Absolute */
 	{
@@ -446,7 +499,21 @@ const Cpu6502::InstructionInformation Cpu6502::InstructionInfo[256] =
 		},
 		[](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; }
 	},
-	/* 4E */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
+	/* 4E LSR Absolute */
+	{
+		3,
+		6,
+		[](Cpu6502* cpu, Memory64k& mem)
+		{
+			uint16_t addr = combineAddr(cpu->InstructionDecoding[1], cpu->InstructionDecoding[2]);
+			uint8_t& data = mem[addr];
+			cpu->N = 0;
+			cpu->C = data & 1;
+			data = (data >> 1) & 0x7F;
+			cpu->Z = data == 0;
+		},
+		[](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; }
+	},
 	/* 4F */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
 	/* 50 BVC (branch if overflow flag clear) */
 	{
@@ -485,7 +552,20 @@ const Cpu6502::InstructionInformation Cpu6502::InstructionInfo[256] =
 		},
 		[](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; }
 	},
-	/* 56 */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
+	/* 56 LSR ZeroPage,X */
+	{
+		2,
+		6,
+		[](Cpu6502* cpu, Memory64k& mem)
+		{
+			uint8_t& data = mem[cpu->InstructionDecoding[1] + cpu->X];
+			cpu->N = 0;
+			cpu->C = data & 1;
+			data = (data >> 1) & 0x7F;
+			cpu->Z = data == 0;
+		},
+		[](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; }
+	},
 	/* 57 */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
 	/* 58 CLI */
 	{
@@ -532,7 +612,21 @@ const Cpu6502::InstructionInformation Cpu6502::InstructionInfo[256] =
 			return uint16_t(cpu->InstructionDecoding[1]) + cpu->X > 0xFF;
 		}
 	},
-	/* 5E */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
+	/* 5E LSR Absolute,X */
+	{
+		3,
+		7,
+		[](Cpu6502* cpu, Memory64k& mem)
+		{
+			uint16_t addr = combineAddr(cpu->InstructionDecoding[1], cpu->InstructionDecoding[2]) + cpu->X;
+			uint8_t& data = mem[addr];
+			cpu->N = 0;
+			cpu->C = data & 1;
+			data = (data >> 1) & 0x7F;
+			cpu->Z = data == 0;
+		},
+		[](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; }
+	},
 	/* 5F */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
 	/* 60 */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
 	/* 61 ADC (Indirrect,x) */
@@ -766,10 +860,7 @@ const Cpu6502::InstructionInformation Cpu6502::InstructionInfo[256] =
 	/* 85 */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
 	/* 86 */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
 	/* 87 */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
-	/* 88 */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
-	/* 89 */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
-	/* 8A */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
-	/* 8B DEY */
+	/* 88 DEY */
 	{
 		1,
 		2,
@@ -781,6 +872,9 @@ const Cpu6502::InstructionInformation Cpu6502::InstructionInfo[256] =
 		},
 		[](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; }
 	},
+	/* 89 */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
+	/* 8A */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
+	/* 8B */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
 	/* 8C */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
 	/* 8D */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
 	/* 8E */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
@@ -820,8 +914,19 @@ const Cpu6502::InstructionInformation Cpu6502::InstructionInfo[256] =
 	/* 9D */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
 	/* 9E */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
 	/* 9F */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
-	/* A0 */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
-	/* A1 LDA (Indirect,X) TODO !!! */
+	/* A0 LDY Immediate */  	
+	{
+		2,
+		2,
+		[](Cpu6502* cpu, Memory64k& mem)
+		{
+			uint8_t data = cpu->Y = cpu->InstructionDecoding[1];
+			cpu->Z = data == 0;
+			cpu->N = (data & 0b1000000) == 1;
+		},
+		[](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; }
+	},
+	/* A1 LDA (Indirect,X) */
 	{
 		2,
 		6,
@@ -835,9 +940,31 @@ const Cpu6502::InstructionInformation Cpu6502::InstructionInfo[256] =
 		}, 
 		[](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; }
 	},
-	/* A2 */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
+	/* A2 LDX Immediate */  	
+	{
+		2,
+		2,
+		[](Cpu6502* cpu, Memory64k& mem)
+		{
+			uint8_t data = cpu->X = cpu->InstructionDecoding[1];
+			cpu->Z = data == 0;
+			cpu->N = (data & 0b1000000) == 1;
+		},
+		[](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; }
+	},
 	/* A3 */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
-	/* A4 */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
+	/* A4 LDY ZeroPage */  	
+	{
+		2,
+		3,
+		[](Cpu6502* cpu, Memory64k& mem)
+		{
+			uint8_t data = cpu->Y = mem[cpu->InstructionDecoding[1]];
+			cpu->Z = data == 0;
+			cpu->N = (data & 0b1000000) == 1;
+		},
+		[](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; }
+	},
 	/* A5 LDA ZeroPage */
 	{
 		2,
@@ -850,7 +977,18 @@ const Cpu6502::InstructionInformation Cpu6502::InstructionInfo[256] =
 		},
 		[](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; }
 	},
-	/* A6 */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
+	/* A6 LDX ZeroPage */
+	{
+		2,
+		3,
+		[](Cpu6502* cpu, Memory64k& mem)
+		{
+			uint8_t data = cpu->X = mem[cpu->InstructionDecoding[1]];
+			cpu->Z = data == 0;
+			cpu->N = (data & 0b1000000) == 1;
+		},
+		[](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; }
+	},
 	/* A7 */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
 	/* A8 */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
 	/* A9 LDA_IM */  	
@@ -867,7 +1005,19 @@ const Cpu6502::InstructionInformation Cpu6502::InstructionInfo[256] =
 	},
 	/* AA */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
 	/* AB */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
-	/* AC */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
+	/* AC LDY Absolute */  	
+	{
+		2,
+		4,
+		[](Cpu6502* cpu, Memory64k& mem)
+		{
+			uint16_t addr = combineAddr(cpu->InstructionDecoding[1], cpu->InstructionDecoding[2]);
+			uint8_t data = cpu->Y = mem[addr];
+			cpu->Z = data == 0;
+			cpu->N = (data & 0b1000000) == 1;
+		},
+		[](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; }
+	},
 	/* AD LDA Absolute */
 	{
 		3, 
@@ -881,7 +1031,19 @@ const Cpu6502::InstructionInformation Cpu6502::InstructionInfo[256] =
 		},
 		[](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; }
 	},
-	/* AE */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
+	/* AE LDX Absolute */
+	{
+		3,
+		4,
+		[](Cpu6502* cpu, Memory64k& mem)
+		{
+			uint16_t addr = combineAddr(cpu->InstructionDecoding[1], cpu->InstructionDecoding[2]);
+			uint8_t data = cpu->X = mem[addr];
+			cpu->Z = data == 0;
+			cpu->N = (data & 0b1000000) == 1;
+		},
+		[](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; }
+	},
 	/* AF */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
 	/* B0 BCS (branch if carry set) */
 	{
@@ -907,7 +1069,18 @@ const Cpu6502::InstructionInformation Cpu6502::InstructionInfo[256] =
 	{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
 	/* B2 */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
 	/* B3 */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
-	/* B4 */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
+	/* B4 LDY ZeroPage,X */  	
+	{
+		2,
+		4,
+		[](Cpu6502* cpu, Memory64k& mem)
+		{
+			uint8_t data = cpu->Y = mem[cpu->InstructionDecoding[1] + cpu->X];
+			cpu->Z = data == 0;
+			cpu->N = (data & 0b1000000) == 1;
+		},
+		[](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; }
+	},
 	/* B5 LDA ZeroPage,X */
 	{
 		2,
@@ -920,7 +1093,18 @@ const Cpu6502::InstructionInformation Cpu6502::InstructionInfo[256] =
 		},
 		[](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; }
 	},
-	/* B6 */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
+	/* B6 LDX ZeroPage,Y */
+	{
+		2,
+		4,
+		[](Cpu6502* cpu, Memory64k& mem)
+		{
+			uint8_t data = cpu->X = mem[cpu->InstructionDecoding[1] + cpu->Y];
+			cpu->Z = data == 0;
+			cpu->N = (data & 0b1000000) == 1;
+		},
+		[](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; }
+	},
 	/* B7 */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
 	/* B8 CLV */
 	{
@@ -950,7 +1134,22 @@ const Cpu6502::InstructionInformation Cpu6502::InstructionInfo[256] =
 	},
 	/* BA */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
 	/* BB */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
-	/* BC */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
+	/* BC LDY Absolute,X */  	
+	{
+		2,
+		4,
+		[](Cpu6502* cpu, Memory64k& mem)
+		{
+			uint16_t addr = combineAddr(cpu->InstructionDecoding[1], cpu->InstructionDecoding[2]) + cpu->X;
+			uint8_t data = cpu->Y = mem[addr];
+			cpu->Z = data == 0;
+			cpu->N = (data & 0b1000000) == 1;
+		},
+		[](Cpu6502* cpu, Memory64k& mem) -> uint8_t
+		{
+			return cpu->InstructionDecoding[1] + cpu->X > 0xFF ? 1 : 0;
+		}
+	},
 	/* BD LDA Absolute,X */
 	{
 		3,
@@ -967,7 +1166,22 @@ const Cpu6502::InstructionInformation Cpu6502::InstructionInfo[256] =
 			return cpu->InstructionDecoding[1] + cpu->X > 0xFF ? 1 : 0;
 		}
 	},
-	/* BE */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
+	/* BE LDX Absolute,Y */
+	{
+		3,
+		4,
+		[](Cpu6502* cpu, Memory64k& mem)
+		{
+			uint16_t addr = combineAddr(cpu->InstructionDecoding[1], cpu->InstructionDecoding[2]) + cpu->Y;
+			uint8_t data = cpu->X = mem[addr];
+			cpu->Z = data == 0;
+			cpu->N = (data & 0b1000000) == 1;
+		},
+		[](Cpu6502* cpu, Memory64k& mem) -> uint8_t
+		{
+			return cpu->InstructionDecoding[1] + cpu->Y > 0xFF ? 1 : 0;
+		}
+	},
 	/* BF */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
 	/* C0 CPY Immediate */
 	{
@@ -1040,7 +1254,18 @@ const Cpu6502::InstructionInformation Cpu6502::InstructionInfo[256] =
 		[](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; }
 	},
 	/* C7 */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
-	/* C8 */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
+	/* C8 INY */
+	{
+		1,
+		2,
+		[](Cpu6502* cpu, Memory64k& mem)
+		{
+			cpu->Y = (cpu->Y + 1) & 0xFF;
+			cpu->Z = cpu->Y == 0;
+			cpu->N = cpu->Y & kBit7Mask;
+		},
+		[](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; }
+	},
 	/* C9 CMP Immediate */
 	{
 		2,
@@ -1066,18 +1291,7 @@ const Cpu6502::InstructionInformation Cpu6502::InstructionInfo[256] =
 		},
 		[](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } 
 	},
-	/* CB INY */
-	{
-		1,
-		2,
-		[](Cpu6502* cpu, Memory64k& mem)
-		{
-			cpu->Y = (cpu->Y + 1) & 0xFF;
-			cpu->Z = cpu->Y == 0;
-			cpu->N = cpu->Y & kBit7Mask;
-		},
-		[](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; }
-	},
+	/* CB */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
 	/* CC CPY Absolute */
 	{
 		3,
@@ -1174,7 +1388,16 @@ const Cpu6502::InstructionInformation Cpu6502::InstructionInfo[256] =
 		[](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; }
 	},
 	/* D7 */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
-	/* D8 */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
+	/* D8 CLD */
+	{
+		1,
+		2,
+		[](Cpu6502* cpu, Memory64k& mem)
+		{
+			cpu->D = 0;
+		},
+		[](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; }
+	},
 	/* D9 CMP Absolute,Y */
 	{
 		3,
@@ -1194,16 +1417,7 @@ const Cpu6502::InstructionInformation Cpu6502::InstructionInfo[256] =
 		}
 	},
 	/* DA */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
-	/* DB CLD */
-	{
-		1,
-		2,
-		[](Cpu6502* cpu, Memory64k& mem)
-		{
-			cpu->D = 0;
-		},
-		[](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; }
-	},
+	/* DB */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
 	/* DC */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
 	/* DD CMP Absolute,X */
 	{
@@ -1260,7 +1474,7 @@ const Cpu6502::InstructionInformation Cpu6502::InstructionInfo[256] =
 			uint8_t zpAddr = cpu->InstructionDecoding[1] + cpu->X;
 			uint16_t addr = combineAddr(mem[zpAddr], mem[(zpAddr + 1) & 0xFF]);// indirrect Zero Page
 
-			int16_t data = 0;
+			uint8_t data = 0;
 			assert(!cpu->D); // Decimal mode not implemented !!!
 			//if(cpu->D)
 			//{
@@ -1270,7 +1484,7 @@ const Cpu6502::InstructionInformation Cpu6502::InstructionInfo[256] =
 			//else
 			{
 				data = int16_t(cpu->A) - mem[addr] - (1 - cpu->C);
-				cpu->V = (data > 127 || data < -128) ? 1 : 0;
+				cpu->V = (AsInt8(data) > 127 || AsInt8(data) < -128) ? 1 : 0;
 			}
 			cpu->C = (data >= 0) ? 1 : 0;
 			cpu->N = data & kBit7Mask;
@@ -1322,7 +1536,13 @@ const Cpu6502::InstructionInformation Cpu6502::InstructionInfo[256] =
 		[](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; }
 	},
 	/* E9 */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
-	/* EA */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
+	/* EA NOP */
+	{
+		1, 
+		2,
+		[](Cpu6502* cpu, Memory64k& mem) {}, 
+		[](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; }
+	},
 	/* EB */			{0, 0, [](Cpu6502* cpu, Memory64k& mem) {}, [](Cpu6502* cpu, Memory64k& mem) -> uint8_t { return 0; } },
 	/* EC CPX Absolute */
 	{
@@ -1419,7 +1639,7 @@ const Cpu6502::InstructionInformation Cpu6502::InstructionInfo[256] =
 
 void Cpu6502::Reset(Memory64k& mem)
 {
-	PC = 0xFFFC;
+	PC = combineAddr(mem[0xFFFC], mem[0xFFFD]);
 	SP = 0x100;
 	F = 0; // Reset all flags
 	A = X = Y = 0;

@@ -9,18 +9,21 @@ int main()
 	mem.Reset();
 
 	// Todo preload a real program in Memory64k !
-	mem[0xFFFC] = 0xA9;
-	mem[0xFFFD] = 0x99;
+	mem[0xFFFC] = 0x00;
+	mem[0xFFFD] = 0x60;
+	mem[0x6000] = 0xA9;
+	mem[0x6001] = 0x99;
 
 	Cpu6502 cpu(clock, Cpu6502Model::Original);
-
 	std::thread cpuThread([&]()
 		{
 			cpu.Reset(mem);
+			clock.Start();
 			while (true)
 			{
-				// Todo: throttle for 6502 speed (something like 1Mhz)
+				clock.WaitForNextCycle();
 				cpu.ExecuteCycle(mem);
+				clock.NextCycle();
 			}
 		});
 
