@@ -41,13 +41,14 @@ private:
 	{
 		uint8_t F;
 		struct {
-			uint8_t C : 1; // Carry flag
-			uint8_t Z : 1; // Zero flag
-			uint8_t I : 1; // Interrupt Disable
-			uint8_t D : 1; // Decimal Mode
-			uint8_t B : 1; // Break Command
-			uint8_t V : 1; // Overflow
 			uint8_t N : 1; // Negative
+			uint8_t V : 1; // Overflow
+			uint8_t ZZZ : 1; // Unused
+			uint8_t B : 1; // Break Command
+			uint8_t D : 1; // Decimal Mode
+			uint8_t I : 1; // Interrupt Disable
+			uint8_t Z : 1; // Zero flag
+			uint8_t C : 1; // Carry flag
 		};
 	};
 
